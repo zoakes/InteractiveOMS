@@ -11,6 +11,8 @@ from IBC import IBClient
 
 from orm import * #Sloppy, clean up later.
 
+from Order import Order
+
 
 import datetime
 import time
@@ -57,6 +59,10 @@ class IBB:
         self.sent = []
         self.filled = []
         
+        ## --------------------- Makes sense to save both, bc we WONT have a orderId prior to sending order. CANT force them to be the same, always awkward...
+        ## NOT needed for markets, but for limits later, will be helpful to have BOTH values saved. 
+        ## (Will remove excess bs when finished.)
+        
         self.filled_uids = []
         self.filled_oids = []
         #self.last_uid = None
@@ -66,11 +72,63 @@ class IBB:
         
         
         '''
-        CAN ALSO SUBSCRIBE TO EVENTS HERE !!!  ------------------------------------------------------- ************
+        -----------------  CAN ALSO SUBSCRIBE TO EVENTS HERE !!!   -----------------
         say self.ibc.ib.execDetailsEvent += OnExecDetails 
+        
+        ib = self.ibc.ib
+        ib.orderStatusEvent += onOrderStatus 
         
         '''
         
+        ib = self.ibc.ib
+        ib.orderStatusEvent += self.onOrderStatusUpdate
+        
+        ## Trades has order, orderStatus, contract, log, fills -- anything we would need.
+        
+        self.filled_trades = []
+        self.sent_trades = []
+        
+    
+    ## THIS definitely gives us FILLED EVENT, and PRE SUBMITTED ! BOTH are sufficient. (filled, sent)
+    def onOrderStatusUpdate(self, trade):
+        status = trade.orderStatus.status
+        orderId = trade.orderStatus.orderId
+        direction = trade.order.action
+        qty = trade.order.totalQuantity
+        fill_price = trade.orderStatus.avgFillPrice
+        
+        if orderId != 0:
+            uid = [k for k, v in self.orderId_by_uid.items() if v == oid]
+        
+        print('UPDATE sql + lists here!!\n')
+        
+        print("status: ", status)
+        print(f'ID: {orderId}')
+        print(f'dir: {direction}')
+        print(f'qty: {qty}')
+        print(f'fill price: {fill_price}')
+        
+        if status == 'Filled':
+            self.filled_trades += [trade]
+            self.filled_oids += [oid]
+            
+            self.filled += [uid]
+        
+        if status in ['Submitted', 'PreSubmitted']:
+            self.sent_trades += [trade]
+            
+            # Maybe not even needed...
+            if uid not in self.sent:
+                self.sent += [uid]
+            
+        if 'Cancelled' in status:
+            print("Order Cancelled -- ALERT VIA EMAIL REJECTION?")
+            
+            
+            
+        
+        
+        ## THIS event is ideal... this gives us ALL events, from PreSubmitted, to Filled.
     
     async def run(self):
         # asyncio.create_task()
@@ -94,24 +152,22 @@ class IBB:
         
         """
         global g_kill
-        
-        sql_read_ct = 0
+
 
         last = time.time()
         while True:
             t1 = time.time_ns()
             res = await read_sql() #From ORM 
-            t2 = time.time_ns()
-    
+            
             # IF new orders present, ADD to oms (simple oms, local lists + sql)
             if len(res) > 0:
                 #await self.add_to_oms(res)
                 self.add_to_oms(res)
+            
+            t2 = time.time_ns()
+            
+            #if len(res) == 0: await asyncio.sleep(.25) #Slow things down if empty...
     
-            if len(res) == 0: await asyncio.sleep(.25)             # TEMP !! (to SLOW things down with small database)
-    
-            # print(f'Testing Inf Sql Read --- New Trades: {len(res)} Count: {sql_read_ct}')
-            sql_read_ct += 1
     
             if time.time() > last + 5:
                 print(f'< sql read  --  ', time.strftime('%X'), f' latency  --  {(t2 - t1)/1000}us', '>')
@@ -120,6 +176,7 @@ class IBB:
             if g_kill: return
                 
                 
+
     def add_to_oms(self, new):
         """
         Read through new orders, confirm unsent.
@@ -135,17 +192,19 @@ class IBB:
         
         # ADD to orders
         for order in unsent:
-            self.orders += [order]
+            #Save all orders (sql row orders)
+            self.orders += [order] 
             
+            # Unpack details
             uid, symbol, side, qty, *rem = order
             
             side = 'b' if side > 0 else 's'
-            res, trade = self.ibc.send_order(symbol, side, qty)                             # ibc.send_order('MES','BUY',1)
+            res, trade = self.ibc.send_order(symbol, side, abs(int(qty)))               # ibc.send_order('MES','BUY',1)
             
-            # Update that it was sent (OR let that happen in handler?)
+            # Update that it was sent (OR let that happen in handler?) CAN add event handler HERE in init?
             if res != -1:
                 self.sent += [order]
-                sql_update_sent(uid)    # From ORM  (COULD also do this in OnExecDetails -- Submitted)
+                sql_update_sent(uid)                                            # From ORM  (COULD also do this in OnExecDetails -- Submitted)
                 ## COULD also save the ib_id here !! 
                 ib_id = trade.order.orderId
                 
@@ -156,6 +215,12 @@ class IBB:
             
             print('Order Sent: ', order)
         
+        
+    
+    ## ------------------------- Helpers ------------------------------ ## 
+            
+    # NOT needed with orderStatusEvent : )
+            
     def check_ib_filled_orders(self):
         """
         Check which orders have filled (According to IB)
@@ -188,6 +253,7 @@ class IBB:
         return self.filled_oids, self.filled_uids
         
 
+    # Dont think I need this, given I will haev stream of statuses
     def check_sql_update_filled(self):
         '''
         Lookup in sql which are filled...
@@ -224,6 +290,7 @@ if __name__ == '__main__':
     
     ## IBC Helper (TRUE IBC Commander) 
     # IBC(twsVersion=7497, gateway=False, tradingMode='', twsPath='', twsSettingsPath='', ibcPath='C:\\IBC', ibcIni='', javaPath='', userid='', password='', fixuserid='', fixpassword='')
+    
     ibc = IBClient(7497,random.randint(1,9900))      
     print(ibc)  
     
