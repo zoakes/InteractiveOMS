@@ -24,6 +24,7 @@ g_kill = False
 
 '''
 THIS could truly be treated like a callback + passed to IBC as an argument : )
+## OR even better, SUBSCRIBED to ibc as an argument... 
 
 
 def onExecDetails(trade, fill):
@@ -34,18 +35,7 @@ def onExecDetails(trade, fill):
     
     print(f"\nUpdated Order Status --  ({symbol}) : {status}\n")
     
-    if status in ['Submitted', 'PreSubmitted', 'PendingSubmit']:
-        print(f'{tm} Order Submitted -- {symbol}')
-        
-        ## ---------- WRITE to Databse (SENT)
-    
-    if status in ['Filled', 'Fill', 'fill', 'filled']:
-        print(f'{tm} Order Filled -- {symbol}')
-        
-        ## ---------- WRITE to Database (FILLED )
-        
-    if status in ['Cancelled','PendingCancel']:
-        print(f'{tm} Order Cancelled -- {symbol}')
+    # DO whatever here...
         
 '''
 
@@ -96,16 +86,18 @@ class IBB:
         direction = trade.order.action
         qty = trade.order.totalQuantity
         fill_price = trade.orderStatus.avgFillPrice
+        symbol = trade.contract.localSymbol
         
         if orderId != 0:
             uid = [k for k, v in self.orderId_by_uid.items() if v == oid]
         
         
-        print("status: ", status)
-        print(f'ID: {orderId}')
-        print(f'dir: {direction}')
-        print(f'qty: {qty}')
-        print(f'fill price: {fill_price}')
+        print("status:      ", status)
+        print("symbol:      ", symbol)
+        print(f'ID:           {orderId}')
+        print(f'dir:          {direction}')
+        print(f'qty:          {qty}')
+        print(f'fill price:   {fill_price}')
         
         if status == 'Filled':
             self.filled_trades += [trade]
@@ -127,18 +119,15 @@ class IBB:
             print("Order Cancelled -- ALERT VIA EMAIL REJECTION?")
             
             
-            
-        
-        
-        ## THIS event is ideal... this gives us ALL events, from PreSubmitted, to Filled.
-    
+    # Non Blocking run
     async def run(self):
+        ## NON Blocking run call (Not needed)
         # asyncio.create_task()
         global g_sql_task
         self.inf_task = asyncio.create_task( self.inf_sql_loop() )
         
         
-        
+    # Blocking run call (Sufficient)
     async def inf_sql_loop(self):
         """
         READ AND SEND LOOP ! 
@@ -178,7 +167,7 @@ class IBB:
             if g_kill: return
                 
                 
-
+    # Send new orders + record as sent in sql
     def add_to_oms(self, new):
         """
         Read through new orders, confirm unsent.

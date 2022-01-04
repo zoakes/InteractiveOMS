@@ -61,9 +61,18 @@ def sql_update_sent(uid):
     sql = f"UPDATE oms SET sent = 1 WHERE uid = {uid}"  # ?"  # (%s)"
     cur.execute(sql)
     cnx.commit()
+    
+def sql_update_filled(uid):
+    global cnx
+    global cur
+    
+    sql = f"UPDATE oms SET filled = 1 WHERE uid = {uid}"
+    cur.execute(sql)
+    cnx.commit()
 
 
-def sql_update_filled(symbol, side, qty):
+#Needs to MATCH filled by details...
+def sql_match_update_filled(symbol, side, qty):
     """
     Since it doesnt matter WHICH order is filled (in case of 2x identical MKT orders)...
     WHY not simply report the FIRST one (not filled) as FILLED.

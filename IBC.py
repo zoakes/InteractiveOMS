@@ -299,11 +299,7 @@ class IBClient:
                 self.ib.cancelOrder(order)
                 print(f'Cancelled Order -- {order}')
                 
-    # def cancel_stop_orders(self):
-    #     for order in self.ib.orders():
-    #         if order.orderType == "STP":
-    #             self.ib.cancelOrder(order)
-    #             print(f'Cancelled Order -- {order}')
+
                 
     #Slow. but reliable.
     def get_last_close(self):
@@ -336,13 +332,14 @@ class IBClient:
             return last_trade.orderStatus.avgFillPrice
         
         
-    #Doesnt fucking work either.
+    #Doesnt fucking work either. (think bc my data is bullshit?)
     def onBarUpdate(self, bars, hasNewBar):
         last_bar = bars[-1]
         if last_bar:
             self.last = last_bar.close
         
-        
+    
+    # NOT used -- just tested to see if ethods work as handlers -- they do.
     def onExecDetailsClass(self, trade, fill):
         #trade.orderStatus.status == 'Fill' or 'Filled'
         symbol = trade.contract.localSymbol
