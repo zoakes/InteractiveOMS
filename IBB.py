@@ -100,7 +100,6 @@ class IBB:
         if orderId != 0:
             uid = [k for k, v in self.orderId_by_uid.items() if v == oid]
         
-        print('UPDATE sql + lists here!!\n')
         
         print("status: ", status)
         print(f'ID: {orderId}')
@@ -113,6 +112,9 @@ class IBB:
             self.filled_oids += [oid]
             
             self.filled += [uid]
+            
+            # Update Sql table w filled (Fully done -- useful for limits)
+            sql_update_filled(uid)
         
         if status in ['Submitted', 'PreSubmitted']:
             self.sent_trades += [trade]
