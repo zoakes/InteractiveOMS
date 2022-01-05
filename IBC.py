@@ -20,7 +20,7 @@ import random
 
 ib = None
 PORT = 7497
-CID = random.randint(1,9900)
+CID = 21 #random.randint(1,9900)
 
 SYMBOL = 'QQQ' # 'EURUSD' # ## FOR TESTING only --------- THIS needs to be from a cfg
 USING_NOTEBOOK = True # IF using Spyder...
@@ -110,7 +110,15 @@ class IBClient:
         self.qualified_local_symbols = []
         
         
-    
+    def noop(self):
+        try:
+            contract = Forex("EURUSD")
+            self.ib.qualifyContracts(contract)
+            order = MarketOrder("BUY",1)
+            self.ib.whatIfOrder(contract, order)
+        except:
+            return False
+        return True
 
     def connect_to_ib(self):
         #self.cid += 1 #NOT sure if this will work here? 
@@ -128,6 +136,28 @@ class IBClient:
                 sys.exit(-1)
                 
         print('Success.')
+        
+        
+    def connect_to_ib_cid(self):
+        try:
+            self.ib.connect('127.0.0.1', self.port, self.cid)
+        except:
+            self.rt_ct += 1
+            self.ib.disconnect()
+            if self.rt_ct < 5:
+                self.connect_to_ib_cid()
+            else:
+                print(f'Could not connect (with cid: {self.cid}... re-connecting with alternate CID')
+                self.cid += 10
+                try:
+                    self.ib.connect('127.0.0.1', self.port, self.cid)
+                except:
+                    print('Could not connect to either cid... exitting.')
+                    sys.exit(-1)
+                    
+        print('Connection Success.')
+            
+            
         
         
     def get_front_contract(self, root, qualify=True):
@@ -154,7 +184,8 @@ class IBClient:
         
     def send_stop_order(self, symbol, side, qty, offset):
         if not self.is_connected:
-            self.connect_to_ib()
+            # self.connect_to_ib()
+            self.connect_to_ib_cid()
 
         try:
             price = self.get_last_close() + offset    #USE NEGATIVE or POS offsets for above below.
@@ -182,6 +213,7 @@ class IBClient:
     def send_order(self, symbol, side, qty):
         if not self.is_connected:
             self.connect_to_ib()
+            # self.connect_to_ib_cid()
             #Sleep?
         
 
@@ -370,6 +402,10 @@ class IBClient:
             
             
 if __name__ == '__main__':
+    
+    
+    ## ------------------------- TESTING ONLY --------------------------- ## 
+    
     
     # SYMBOL = 'EURUSD' #Testing only.
     

@@ -7,13 +7,13 @@ Created on Mon Jan  3 12:20:34 2022
 
 
 import asyncio
-from IBC import IBClient
+from IBC import IBClient, PORT, CID
 
 from orm import * #Sloppy, clean up later.
 
 from Order import Order
 
-
+import sys
 import datetime
 import time
 
@@ -73,10 +73,19 @@ class IBB:
         ib = self.ibc.ib
         ib.orderStatusEvent += self.onOrderStatusUpdate
         
+        ib.disconnectedEvent += self.onDisconnect
+        
         ## Trades has order, orderStatus, contract, log, fills -- anything we would need.
         
         self.filled_trades = []
         self.sent_trades = []
+        
+    
+        
+    def onDisconnect(self):
+        print('Disconnect Event')
+        IBB.pause_for_reset()
+        
         
     
     ## THIS definitely gives us FILLED EVENT, and PRE SUBMITTED ! BOTH are sufficient. (filled, sent)
@@ -119,16 +128,75 @@ class IBB:
             print("Order Cancelled -- ALERT VIA EMAIL REJECTION?")
             
             
+        
+    async def robust_run(self):
+        """
+        THIS handles RECONNECT WITH SAME CID !! 
+        (To try NEW CID reconnection, try using OTHER RUN METHODS -- inf_order_read_and_send() or run() )
+        
+        if not connected, disconnects, pauses, reconnects to SAME CID
+            Retries up to 5 times.
+        IF connected, reads for new sql orders. 
+        
+        
+        Returns out when killed (with global, g_kill)
+        -------
+        """
+        global g_kill 
+        
+        # ib = self.ibc.ib
+        # if not ib.isConnected():
+        #     # THIS needs to match ALL others! (via Global)
+        #     self.ibc.ib.connect('127.0.0.1', PORT, CID) 
+        
+        ct = 0
+        
+        last = time.time()
+        while True:
+            
+            tst = self.ibc.noop()
+            
+            if not self.ibc.ib.isConnected() or not tst:
+                
+                try:
+                    retries += 1
+                    self.ibc.ib.disconnect() 
+                    time.sleep(2)
+                    self.ibc.ib.connect('127.0.0.1', PORT, CID)
+                    time.sleep(2)
+                    print(f'Reconnect Attempt {retries} --- Success: ', self.ibc.ib.isConnected())
+                except KeyboardInterrupt:
+                    sys.exit()
+                except Exception as e:
+                    continue #Try again
+                    
+            
+            ## IS Connected 
+            
+            res = await read_sql()
+            if len(res) > 0:
+                self.add_to_oms(res)
+        
+            if time.time() > last + 5:
+                last = time.time()
+                print(f'< IB -- {ib} -- ', time.strftime('%X'),' >')
+                
+            
+            if g_kill:
+                print('Exitting Program....')
+                return
+        
+            
     # Non Blocking run
     async def run(self):
         ## NON Blocking run call (Not needed)
         # asyncio.create_task()
         global g_sql_task
-        self.inf_task = asyncio.create_task( self.inf_sql_loop() )
+        self.inf_task = asyncio.create_task( self.inf_order_read_and_send() )
         
         
     # Blocking run call (Sufficient)
-    async def inf_sql_loop(self):
+    async def inf_order_read_and_send(self):
         """
         READ AND SEND LOOP ! 
         (UPDATE as SENT)
@@ -206,7 +274,17 @@ class IBB:
             
             print('Order Sent: ', order)
         
-        
+    
+    
+    @staticmethod
+    def pause_for_reset(reset_hr = 16):
+        now = datetime.datetime.now()
+        if now.hour == reset_hr:
+            mins_left = 60 - now.minute
+            print(f'{reset_hr}:00 reset -- Sleeping for: {mins_left} mins...')
+            time.sleep(60 * mins_left)
+        else:
+            time.sleep(5) #Otherwise, sleep for 5 seconds.
     
     ## ------------------------- Helpers ------------------------------ ## 
             
@@ -274,22 +352,24 @@ class IBB:
 if __name__ == '__main__':
     
     import random 
-    import sys
     
-    # WHEN NOT TESTING -- replace with 
-    CID = random.randint(1,9900) #TO randomize -- you WILL lose pending orders this way though...
     
-    ## IBC Helper (TRUE IBC Commander) 
-    # IBC(twsVersion=7497, gateway=False, tradingMode='', twsPath='', twsSettingsPath='', ibcPath='C:\\IBC', ibcIni='', javaPath='', userid='', password='', fixuserid='', fixpassword='')
-    
-    ibc = IBClient(7497,random.randint(1,9900))      
+    ## ------------------------ TESTING LINE ONLY (Makes it less reliable client live) ----------------- ## 
+    CID = random.randint(1,9900) 
+    #TO randomize -- you WILL lose pending orders this way though... ( ---------- WARNING --------- )
+
+
+    ibc = IBClient(PORT,CID)      
     print(ibc)  
     
     ibb = IBB(ibc)
     
     try:
         # Blocking Version...
-        asyncio.run(ibb.inf_sql_loop())
+        asyncio.run(ibb.inf_order_read_and_send())
+        
+        # BEST version ... 
+        #asyncio.run(ibb.robust_run()) ## Untested ! but more robust...
         
         ## NON Blocking version... 
         #asyncio.run(ibb.run() )
